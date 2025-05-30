@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Post;
 use App\Models\Platform;
 use Illuminate\Http\Request;
-use App\Traits\CustomResponseTrait;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use App\Traits\CustomResponseTrait;
+use App\Traits\LogsActivity;
 
 class PostController extends Controller
 {
-    use CustomResponseTrait;
+    use CustomResponseTrait, LogsActivity;
 
     /**
      * Get a list of posts for the authenticated user, with optional filters.
@@ -35,6 +36,7 @@ class PostController extends Controller
             }
 
             $posts = $query->paginate(10);
+            $this->logActivity('viewed_post_list');
             return $this->customResponse($posts);
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
@@ -63,7 +65,15 @@ class PostController extends Controller
             if ($validator->fails()) {
                 return $this->customResponse($validator->errors(), 422);
             }
+            $todayCount = Post::where('user_id', Auth::id())
+                ->whereDate('created_at', now()->toDateString())
+                ->count();
 
+            if ($todayCount >= 10) {
+                $this->logActivity('post_creation_blocked_limit');
+                return $this->customResponse('You’ve reached the daily limit of 10 scheduled posts.', 429);
+            }
+            
             $post = Post::create([
                 'title'          => $request->title,
                 'content'        => $request->content,
@@ -77,7 +87,7 @@ class PostController extends Controller
                 ->mapWithKeys(fn($id) => [$id => ['platform_status' => 'pending']]);
 
             $post->platforms()->attach($platforms);
-
+            $this->logActivity('post_created', ['post_id' => $post->id, 'title' => $post->title]);
             return $this->customResponse($post->load('platforms'), 201);
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
@@ -96,7 +106,7 @@ class PostController extends Controller
             if ($post->user_id !== Auth::id()) {
                 return $this->customResponse('Unauthorized', 403);
             }
-
+            $this->logActivity('viewed_post', ['post_id' => $post->id]);
             return $this->customResponse($post->load('platforms'));
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
@@ -139,6 +149,7 @@ class PostController extends Controller
 
                 $post->platforms()->sync($platforms);
             }
+            $this->logActivity('post_updated', ['post_id' => $post->id]);
 
             return $this->customResponse($post->load('platforms'));
         } catch (\Exception $e) {
@@ -158,7 +169,7 @@ class PostController extends Controller
             if ($post->user_id !== Auth::id()) {
                 return $this->customResponse('Unauthorized', 403);
             }
-
+            $this->logActivity('post_deleted', ['post_id' => $postId]);
             $post->delete();
             return $this->customResponse('Post deleted successfully');
         } catch (\Exception $e) {

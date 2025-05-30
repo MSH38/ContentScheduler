@@ -4,13 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Platform;
 use Illuminate\Http\Request;
-use App\Traits\CustomResponseTrait;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use App\Traits\CustomResponseTrait;
+use App\Traits\LogsActivity;
 
 class PlatformController extends Controller
 {
-    use CustomResponseTrait;
+    use CustomResponseTrait, LogsActivity;
 
     /**
      * Get all available platforms.
@@ -20,7 +21,8 @@ class PlatformController extends Controller
     public function index()
     {
         try {
-            $platforms = Platform::all();
+            $platforms = Platform::get()->paginate(10);
+            $this->logActivity('viewed_platform_list');
             return $this->customResponse($platforms);
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
@@ -48,6 +50,9 @@ class PlatformController extends Controller
 
             $user = Auth::user();
             $user->activePlatforms()->sync($request->platforms); // pivot: user_platform
+            $this->logActivity('toggled_user_platforms', [
+                'platform_ids' => $request->platforms
+            ]);
 
             return $this->customResponse('User platforms updated successfully');
         } catch (\Exception $e) {
@@ -64,6 +69,10 @@ class PlatformController extends Controller
     public function show(Platform $platform)
     {
         try {
+            $this->logActivity('viewed_platform', [
+                'platform_id' => $platform->id
+            ]);
+
             return $this->customResponse($platform);
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
@@ -90,6 +99,10 @@ class PlatformController extends Controller
             }
 
             $platform->update($request->only(['name', 'type']));
+            $this->logActivity('platform_updated', [
+                'platform_id' => $platform->id,
+                'name' => $platform->name
+            ]);
             return $this->customResponse($platform);
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
@@ -106,6 +119,7 @@ class PlatformController extends Controller
     {
         try {
             $platform->delete();
+            $this->logActivity('platform_deleted', ['platform_id' => $id]);
             return $this->customResponse('Platform deleted successfully');
         } catch (\Exception $e) {
             return $this->customResponse($e->getMessage(), 500);
